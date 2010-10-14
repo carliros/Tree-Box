@@ -1,0 +1,233 @@
+PRAGMA genlinepragmas
+
+INCLUDE "DataTree.ag"
+
+imports{
+import Data.List
+import Data.Maybe
+import FSTree
+}
+
+-- Selector's Stuff
+
+ATTR Node Rule Selector SSelector Property Origin [|| myself:SELF ]
+ATTR NTree [|| nd:Node ]
+SEM NTree
+    | NTree lhs.nd = @node.myself
+
+ATTR NTrees NTree [ fathers: {[(Node, [Node])]} ||]
+
+SEM NTree
+    | NTree ntrees.fathers = @loc.nfs : @lhs.fathers
+            loc.fathers    = @lhs.fathers
+            loc.nfs        = (@node.myself, @loc.siblings)
+
+SEM Root
+    | Root ntree.fathers  = []
+           ntree.siblings = []
+
+ATTR NTrees NTree [ siblings: {[Node]} ||]
+SEM NTrees
+    | Cons tl.siblings = @hd.nd : @lhs.siblings
+           hd.siblings = @lhs.siblings
+
+SEM NTree
+    | NTree ntrees.siblings = []
+            loc.siblings    = @lhs.siblings
+
+{
+defaultUserAgentStyle :: [(Selector, Property, Int)]
+--defaultUserAgentStyle = [(SimpSelector UnivSelector, Property UserAgent "display" "none" False, 1000)]
+defaultUserAgentStyle = []
+--defaultUserStyle :: 
+--defaultUserStyle = 
+
+}
+-- Selector's specifycity
+ATTR Selector SSelector Rule [|| counter: {(Int, Int, Int, Int)}]
+SEM SSelector
+    | TypeSelector lhs.counter = (0, 0, 0, 1)
+    | UnivSelector lhs.counter = (0, 0, 0, 0)
+
+SEM Selector
+    | SimpSelector lhs.counter = @sSelector.counter
+    | CombSelector lhs.counter = (\(a1, b1, c1, d1) (a2, b2, c2, d2) -> (a1+a2, b1+b2, c1+c2, d1+d2)) @sSelector.counter @selector.counter
+
+ATTR Node [|| specifycity: Int]
+SEM Node
+    | NRuleCss lhs.specifycity = (\(a, b, c, d) -> a*(10^4)+b*(10^3)+c*(10^2)+d*10) @rule.counter
+    | NText    lhs.specifycity = 0
+    | NTag     lhs.specifycity = 0
+    | NStyle   lhs.specifycity = 0
+
+-- Style Sheet
+ATTR NTree NTrees [|| rules USE {++} {[]}: {[Maybe (Selector, [Property], Int)]} ]
+SEM NTree
+    | NTree lhs.rules = let nsel = case @node.myself of
+                                    NTag _         -> Nothing
+                                    NText _        -> Nothing
+                                    NStyle         -> Nothing
+                                    NRuleCss (s,p) -> Just (s, p, @node.specifycity)
+                        in nsel : @ntrees.rules
+                      
+-- Redistributing the selector's list
+ATTR NTrees NTree [ css:{[([TSelector], Property, Int)]} ||]
+SEM Root
+    | Root ntree.css = map (\(sel,prop,i) -> (reverse (transformSelector sel),prop,i)) $ distributeDeclarations (catMaybes @ntree.rules) ++ defaultUserAgentStyle
+
+-- Attr to state who is the Root
+ATTR NTree NTrees [ iamtheroot: Bool ||]
+SEM Root
+    | Root ntree.iamtheroot = True
+
+SEM NTree
+    | NTree ntrees.iamtheroot = if @lhs.iamtheroot then False else False
+
+-- Downloading the father property throughout the html tree
+ATTR NTree NTrees [propFather: CssProperty ||]
+SEM NTree
+    | NTree ntrees.propFather = @loc.propDisplay
+
+SEM Root
+    | Root ntree.propFather = CssProperty "root" "default" "default"
+
+-- Asign values to each property for every element in the html tree
+{-
+    Algorithm to asign an specific value
+    ====================================
+        if the cascade result in a value
+        then use it
+        else if the element is inheritable and the element is not the root
+             then use the compute value of the element's father
+             else use the inital value of the property
+-}
+SEM NTree
+    | NTree loc.rlist = filter (\(selector, _, _) -> applySelector @node.myself @loc.fathers (reverse @loc.siblings) [] 0 selector) @lhs.css
+            loc.propDisplay = applyRule "display" False "inline" @lhs.propFather @lhs.iamtheroot @loc.rlist
+            loc.sel   = True
+            loc.desc  = if @loc.sel
+                        then show @loc.propDisplay
+                        else ""
+
+{
+-- applyRule :: Name   -> Inherited -> DefaultValue -> FatherProperty -> IsRoot -> ListCss                   -> CssProperty
+applyRule    :: String -> Bool      -> String       -> CssProperty    -> Bool   -> [([TSelector],Property,Int)] -> CssProperty
+applyRule       nm        inh          defval          father            isRoot    rules
+    = let lprop = getPropertyDeclarations nm rules
+          rlist = head' $ dropWhile null $ cascadingSorting lprop
+      in if not $ null rlist
+         then let (_,Property _ _ val _,_) = head rlist
+              in if val == "inherit"
+                 then if isRoot
+                      then CssProperty nm defval defval
+                      else CssProperty nm (specificValue father) (computedValue father)
+                 else CssProperty nm val val
+         else if inh && (not isRoot)
+              then CssProperty nm (specificValue father) (computedValue father)
+              else CssProperty nm defval defval
+
+}
+
+-- Generating the Formatting Structure
+ATTR NTrees [|| res:{[Maybe BoxTree]}]
+SEM NTrees
+    | Cons lhs.res = @hd.res : @tl.res
+    | Nil  lhs.res = []
+
+ATTR NTree [|| res: {Maybe BoxTree} ]
+SEM NTree
+    | NTree lhs.res = let nd = case @node.myself of
+                                NTag  str  -> Just $ BoxNode @loc.sel @loc.desc str
+                                NText str  -> Just $ BoxNode @loc.sel @loc.desc "text"
+                                NStyle     -> Nothing
+                                NRuleCss _ -> Nothing
+                      in if isNothing nd
+                         then Nothing
+                         else Just $ BoxTree (fromJust nd) (catMaybes @ntrees.res)
+
+ATTR Root [|| res: BoxTree ]
+SEM Root
+    | Root lhs.res = fromJust @ntree.res
+
+{
+head' []     = []
+head' (x:xs) = x
+
+cascadingSorting lista = let lst1 = sortBy fsort $ getDeclarations User        True    lista
+                             lst2 = sortBy fsort $ getDeclarations Author      True    lista
+                             lst3 = sortBy fsort $ getDeclarations Author      False   lista
+                             lst4 = sortBy fsort $ getDeclarations User        False   lista
+                             lst5 = sortBy fsort $ getDeclarations UserAgent   False   lista
+                          in [lst1, lst2 ,lst3, lst4, lst5]
+                          where getDeclarations origin important = filter (\(_, Property org _ _ imp, _) -> origin==org && important==imp)
+                                fsort (_ , Property _ _ _ _, v1) (_, Property _ _ _ _, v2)
+                                    | v1 > v2   = LT
+                                    | v1 < v2   = GT
+                                    | otherwise = EQ
+                            
+
+getPropertyDeclarations prop = filter (\(_, Property _ nm _ _, _) -> nm == prop)
+
+distributeDeclarations = concat . map (\(sel, lprop, spe) -> map (\prop -> (sel, prop, spe)) lprop)
+
+data TSelector = TSimplSelector SSelector
+               | TDescdSelector SSelector
+               | TChildSelector SSelector
+               | TSiblnSelector SSelector
+
+transformSelector (SimpSelector s) 
+    = [TSimplSelector s]
+transformSelector (CombSelector s op sel)
+    = case op of
+        " " -> TDescdSelector s : transformSelector sel
+        ">" -> TChildSelector s : transformSelector sel
+        "+" -> TSiblnSelector s : transformSelector sel
+
+--applySelector :: Node -> [Node] -> [Node] -> [Node] -> Int -> [TSelector] -> Bool
+applySelector    _       _         _         _         _      []
+    = True
+applySelector    nd      fathers   siblings  before    count  (sel:nextSel)
+    = case sel of
+        TSimplSelector s -> applySimplSelector nd fathers siblings before count s nextSel
+        TDescdSelector s -> applyDescdSelector nd fathers siblings before count s nextSel
+        TChildSelector s -> applyChildSelector nd fathers siblings before count s nextSel
+        TSiblnSelector s -> applySiblnSelector nd fathers siblings before count s nextSel
+
+applySimplSelector nd fathers siblings before count s nextSel
+    = testSimpleSelector s nd && applySelector nd fathers siblings before (count+1) nextSel
+
+applyDescdSelector _  []     _        _      _     _ _
+    = False
+applyDescdSelector nd (f:fs) siblings before count s nextSel
+    =    (testSimpleSelector s (fst f) && applySelector nd fs siblings (f:before) (count+1) nextSel) 
+      || applyDescdSelector nd fs siblings before count s nextSel
+
+applyChildSelector _  []     _        _      _     _ _
+    = False
+applyChildSelector nd (f:fs) siblings before count s nextSel
+    = testSimpleSelector s (fst f) && applySelector nd fs siblings (f:before) (count+1) nextSel
+
+applySiblnSelector nd fathers siblings before count s nextSel
+    = let brothers = if count<=1 then siblings else snd $ head before
+      in let ntest = case s of
+                        TypeSelector nm -> let (bool,ts) = getNextValidTag brothers
+                                           in if bool
+                                              then (NTag nm == head ts, tail ts)
+                                              else (False, [])  -- the empty list it's not important because it won't use any more
+                        UnivSelector    -> let (bool,ts) = getNextValidTag brothers
+                                           in if bool
+                                              then (True, tail ts)
+                                              else (False, [])  -- the empty list it's not important because it won't use any more
+         in (fst ntest && (if count<=1
+                           then applySelector nd fathers (snd ntest) before count nextSel
+                           else applySelector nd fathers siblings (let (f,_)=head before in (f,snd ntest): tail before) count nextSel))
+
+getNextValidTag []           = (False, [])
+getNextValidTag l@(NTag _:_) = (True, l)
+getNextValidTag (_:xs)       = getNextValidTag xs
+
+testSimpleSelector s nd = case s of
+                            TypeSelector nm -> nd == NTag nm
+                            UnivSelector    -> True
+}
+

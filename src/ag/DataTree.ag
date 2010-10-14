@@ -1,0 +1,52 @@
+-- Abstract DataTypes
+
+DATA Root
+    | Root ntree:NTree
+
+DATA NTree
+    | NTree Node ntrees:NTrees
+
+TYPE NTrees = [NTree]
+
+DATA Node
+    | NText     String
+    | NTag      String
+    | NStyle
+    | NRuleCss  Rule
+
+TYPE Rule = (Selector, {[Property]})
+
+DATA Selector
+    | SimpSelector SSelector
+    | CombSelector SSelector String Selector -- combinators: ' ', >, +
+
+DATA SSelector
+    | TypeSelector String
+    | UnivSelector
+
+DATA Property
+    | Property Origin prop: String value: String important:Bool
+
+DATA Origin
+    | UserAgent
+    | User
+    | Author
+
+DERIVING Origin: Eq
+{
+data CssProperty = CssProperty { name         :: String
+                               , specificValue:: String
+                               , computedValue:: String
+                               }
+
+instance Show CssProperty where
+    show (CssProperty nm sv cv) = nm ++ ":" ++ sv
+
+instance Show Property where
+    show (Property _ nm val _) = nm ++ ":" ++ val
+
+instance Eq Node where
+    NTag n1 == NTag n2 = n1 == n2
+    _       == _       = False
+}
+
