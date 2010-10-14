@@ -4,19 +4,19 @@ INCLUDE "DataTree.ag"
 
 imports{
 import Data.List
+import qualified Data.Map as Map
 import Data.Maybe
 import FSTree
 }
 
 -- Selector's Stuff
 
-ATTR Node Rule Selector SSelector Property Origin [|| myself:SELF ]
+ATTR Node Rules Rule Selector SSelector Property Origin [|| myself:SELF ]
 ATTR NTree [|| nd:Node ]
 SEM NTree
     | NTree lhs.nd = @node.myself
 
 ATTR NTrees NTree [ fathers: {[(Node, [Node])]} ||]
-
 SEM NTree
     | NTree ntrees.fathers = @loc.nfs : @lhs.fathers
             loc.fathers    = @lhs.fathers
@@ -53,22 +53,28 @@ SEM Selector
     | SimpSelector lhs.counter = @sSelector.counter
     | CombSelector lhs.counter = (\(a1, b1, c1, d1) (a2, b2, c2, d2) -> (a1+a2, b1+b2, c1+c2, d1+d2)) @sSelector.counter @selector.counter
 
-ATTR Node [|| specifycity: Int]
+ATTR Rules [|| counters: {[(Int, Int, Int, Int)]}]
+SEM Rules
+    | Cons lhs.counters = @hd.counter : @tl.counters
+    | Nil  lhs.counters = []
+
+ATTR Node [|| specifycity: {[Int]}]
 SEM Node
-    | NRuleCss lhs.specifycity = (\(a, b, c, d) -> a*(10^4)+b*(10^3)+c*(10^2)+d*10) @rule.counter
-    | NText    lhs.specifycity = 0
-    | NTag     lhs.specifycity = 0
-    | NStyle   lhs.specifycity = 0
+    | NRuleCss lhs.specifycity = map (\(a, b, c, d) -> a*(10^4)+b*(10^3)+c*(10^2)+d*10) @rules.counters
+    | NText    lhs.specifycity = []
+    | NTag     lhs.specifycity = []
+    | NStyle   lhs.specifycity = []
 
 -- Style Sheet
 ATTR NTree NTrees [|| rules USE {++} {[]}: {[Maybe (Selector, [Property], Int)]} ]
 SEM NTree
     | NTree lhs.rules = let nsel = case @node.myself of
-                                    NTag _         -> Nothing
-                                    NText _        -> Nothing
-                                    NStyle         -> Nothing
-                                    NRuleCss (s,p) -> Just (s, p, @node.specifycity)
-                        in nsel : @ntrees.rules
+                                        NTag _          -> []
+                                        NText _         -> []
+                                        NStyle          -> []
+                                        NRuleCss rules  -> zipWith (\(s,p) sp -> Just (s,p,sp)) rules @node.specifycity
+                                            --Just (s, p, @node.specifycity)
+                        in nsel ++ @ntrees.rules
                       
 -- Redistributing the selector's list
 ATTR NTrees NTree [ css:{[([TSelector], Property, Int)]} ||]
@@ -84,12 +90,12 @@ SEM NTree
     | NTree ntrees.iamtheroot = if @lhs.iamtheroot then False else False
 
 -- Downloading the father property throughout the html tree
-ATTR NTree NTrees [propFather: CssProperty ||]
+ATTR NTree NTrees [propsFather: {Map.Map String String} ||]
 SEM NTree
-    | NTree ntrees.propFather = @loc.propDisplay
+    | NTree ntrees.propsFather = @loc.myProps
 
 SEM Root
-    | Root ntree.propFather = CssProperty "root" "default" "default"
+    | Root ntree.propsFather = Map.empty
 
 -- Asign values to each property for every element in the html tree
 {-
@@ -101,30 +107,54 @@ SEM Root
              then use the compute value of the element's father
              else use the inital value of the property
 -}
+
+-- Propeties that we are supporting
+{
+properties = [ ("display"               , False , "inline")
+             , ("margin-top"            , False , "0")
+             , ("margin-bottom"         , False , "0")
+             , ("margin-right"          , False , "0")
+             , ("margin-left"           , False , "0")
+             , ("padding-top"           , False , "0")
+             , ("padding-right"         , False , "0")
+             , ("padding-bottom"        , False , "0")
+             , ("padding-left"          , False , "0")
+             , ("border-top-width"      , False , "1")
+             , ("border-right-width"    , False , "1")
+             , ("border-bottom-width"   , False , "1")
+             , ("border-left-width"     , False , "1")
+             , ("border-top-color"      , False , "black")
+             , ("border-right-color"    , False , "black")
+             , ("border-bottom-color"   , False , "black")
+             , ("border-left-color"     , False , "black")
+             , ("border-top-style"      , False , "solid")
+             , ("border-right-style"    , False , "solid")
+             , ("border-bottom-style"   , False , "solid")
+             , ("border-left-style"     , False , "solid")
+             ]
+}
+
 SEM NTree
-    | NTree loc.rlist = filter (\(selector, _, _) -> applySelector @node.myself @loc.fathers (reverse @loc.siblings) [] 0 selector) @lhs.css
-            loc.propDisplay = applyRule "display" False "inline" @lhs.propFather @lhs.iamtheroot @loc.rlist
-            loc.sel   = True
-            loc.desc  = if @loc.sel
-                        then show @loc.propDisplay
-                        else ""
+    | NTree loc.rlist   = filter (\(selector, _, _) -> applySelector @node.myself @loc.fathers (reverse @loc.siblings) [] 0 selector) @lhs.css
+            loc.myProps = let funGenKeyValues (pn,inh,def) = (pn, applyRule pn inh def @lhs.propsFather @lhs.iamtheroot @loc.rlist)
+                          in Map.fromList $ map funGenKeyValues properties
 
 {
 -- applyRule :: Name   -> Inherited -> DefaultValue -> FatherProperty -> IsRoot -> ListCss                   -> CssProperty
-applyRule    :: String -> Bool      -> String       -> CssProperty    -> Bool   -> [([TSelector],Property,Int)] -> CssProperty
-applyRule       nm        inh          defval          father            isRoot    rules
+applyRule    :: String -> Bool      -> String       -> Map.Map String String -> Bool   -> [([TSelector],Property,Int)] -> String
+applyRule       nm        inh          defval          father                   isRoot    rules
     = let lprop = getPropertyDeclarations nm rules
           rlist = head' $ dropWhile null $ cascadingSorting lprop
       in if not $ null rlist
          then let (_,Property _ _ val _,_) = head rlist
               in if val == "inherit"
                  then if isRoot
-                      then CssProperty nm defval defval
-                      else CssProperty nm (specificValue father) (computedValue father)
-                 else CssProperty nm val val
+                      then defval
+                      else father Map.! nm
+                 else val
          else if inh && (not isRoot)
-              then CssProperty nm (specificValue father) (computedValue father)
-              else CssProperty nm defval defval
+              then father Map.! nm
+              else defval
 
 }
 
@@ -137,8 +167,12 @@ SEM NTrees
 ATTR NTree [|| res: {Maybe BoxTree} ]
 SEM NTree
     | NTree lhs.res = let nd = case @node.myself of
-                                NTag  str  -> Just $ BoxNode @loc.sel @loc.desc str
-                                NText str  -> Just $ BoxNode @loc.sel @loc.desc "text"
+                                NTag  str  -> if verifyProperty "display" "none" @loc.myProps
+                                              then Nothing
+                                              else Just $ BoxNode str    @loc.myProps
+                                NText str  -> if verifyProperty "display" "none" @loc.myProps
+                                              then Nothing
+                                              else Just $ BoxNode "text" @loc.myProps
                                 NStyle     -> Nothing
                                 NRuleCss _ -> Nothing
                       in if isNothing nd
@@ -150,6 +184,9 @@ SEM Root
     | Root lhs.res = fromJust @ntree.res
 
 {
+verifyProperty nm val props = let pval = props Map.! nm
+                              in val == pval
+
 head' []     = []
 head' (x:xs) = x
 
@@ -169,6 +206,11 @@ cascadingSorting lista = let lst1 = sortBy fsort $ getDeclarations User        T
 getPropertyDeclarations prop = filter (\(_, Property _ nm _ _, _) -> nm == prop)
 
 distributeDeclarations = concat . map (\(sel, lprop, spe) -> map (\prop -> (sel, prop, spe)) lprop)
+{-
+                              let lsel   = map (\(lsel, prop,spe) -> map (\sel  -> (sel,prop,spe)) lsel  ) list
+                                  lprops = map (\(sel,lprops,spe) -> map (\prop -> (sel,prop,spe)) lprops) (concat lsel)
+                              in concat lprops
+-}
 
 data TSelector = TSimplSelector SSelector
                | TDescdSelector SSelector

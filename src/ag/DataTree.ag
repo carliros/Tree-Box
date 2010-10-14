@@ -12,7 +12,9 @@ DATA Node
     | NText     String
     | NTag      String
     | NStyle
-    | NRuleCss  Rule
+    | NRuleCss  Rules
+
+TYPE Rules = [Rule]
 
 TYPE Rule = (Selector, {[Property]})
 

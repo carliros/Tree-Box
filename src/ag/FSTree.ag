@@ -1,4 +1,8 @@
 
+imports{
+import qualified Data.Map as Map
+}
+
 DATA BoxRoot
     | BoxRoot BoxTree
 
@@ -8,7 +12,7 @@ DATA BoxTree
 TYPE Boxes = [BoxTree]
 
 DATA BoxNode
-    | BoxNode  Bool prop:String name:String
+    | BoxNode name:String props:{Map.Map String String}
 
 DERIVING *: Show
 
@@ -69,8 +73,8 @@ xBox = 95
 yBox = 50
 
 -- formatting datatypes
-data OBox = Block Int Int Bool
-          | Name String Int Int
+data OBox = Block String Int Int (Map.Map String String)
+         -- | Name String Int Int
           | Line (Int,Int) (Int, Int)
           | WTam Int Int
         deriving Show
@@ -87,10 +91,10 @@ ATTR BoxTree [|| vec:{(Int,Int)} ]
 SEM BoxTree
     | BoxTree lhs.vec = (@loc.xPos,@loc.yPos)
 
-ATTR BoxNode [|| bl:Bool nm:String ]
+ATTR BoxNode [|| nm: String props: {Map.Map String String}]
 SEM BoxNode
-    | BoxNode lhs.nm = if @bool then @name  ++ "\n" ++ @prop else @name
-              lhs.bl = @bool
+    | BoxNode lhs.nm    = @name
+              lhs.props = @props
 
 ATTR BoxRoot BoxTree Boxes [|| out:{[OBox]}]
 SEM BoxRoot
@@ -99,8 +103,7 @@ SEM BoxRoot
 SEM BoxTree
     | BoxTree lhs.out = let vec1   = (@loc.xPos + (xBox `div` 2), @loc.yPos + yBox)
                             cmdVec = map (\vec2 -> Line vec1 vec2) @boxes.vec2s
-                        in ( (Block @loc.xPos @loc.yPos @boxNode.bl) : 
-                             (Name @boxNode.nm (@loc.xPos+10) (@loc.yPos+10)) : 
+                        in ( (Block @boxNode.nm @loc.xPos @loc.yPos @boxNode.props) : 
                              @boxes.out ) ++ cmdVec
 
 SEM Boxes
