@@ -40,7 +40,7 @@ keywords = [ "important"
            , "border-top-color", "border-right-color", "border-bottom-color", "border-left-color"
            , "border-top-style", "border-right-style", "border-bottom-style", "border-left-style"
            , "red", "yellow", "darkgrey", "grey", "white", "green", "blue", "cyan", "magenta"   -- supported border colors
-           , "hidden", "dotted", "dashed"   -- supported border styles
+           , "hidden", "dotted", "dashed", "solid"   -- supported border styles
            ]
 symbols  = "=*+>:;{}!/<>,"
 reservedsymbols = ["<", "</"]

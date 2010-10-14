@@ -97,19 +97,10 @@ SEM NTree
 SEM Root
     | Root ntree.propsFather = Map.empty
 
--- Asign values to each property for every element in the html tree
-{-
-    Algorithm to asign an specific value
-    ====================================
-        if the cascade result in a value
-        then use it
-        else if the element is inheritable and the element is not the root
-             then use the compute value of the element's father
-             else use the inital value of the property
--}
-
 -- Propeties that we are supporting
 {
+--              Property Name       Is Inherited  Default Value
+--              =================   ============  =============
 properties = [ ("display"               , False , "inline")
              , ("margin-top"            , False , "0")
              , ("margin-bottom"         , False , "0")
@@ -134,6 +125,7 @@ properties = [ ("display"               , False , "inline")
              ]
 }
 
+-- Asign values to each property for every element in the html tree
 SEM NTree
     | NTree loc.rlist   = filter (\(selector, _, _) -> applySelector @node.myself @loc.fathers (reverse @loc.siblings) [] 0 selector) @lhs.css
             loc.myProps = let funGenKeyValues (pn,inh,def) = (pn, applyRule pn inh def @lhs.propsFather @lhs.iamtheroot @loc.rlist)
