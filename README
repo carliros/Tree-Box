@@ -1,0 +1,18 @@
+
+Tree-Box Css is a project written in Haskell.
+In this project I combine the last projects developped.
+I am using the inheritance and the boxcss project.
+
+# Download from Git  (http://github.com/carliros/Inheritance)
+# In order to get installed, you will need:
+
+    * wxhaskell (http://hackage.haskell.org/package/wx)
+    * uulib (http://hackage.haskell.org/package/uulib)
+    * uuagc (http://hackage.haskell.org/package/uuagc)
+
+# Use the Makefile to compile and install: make all
+# To run, use the generated file: ./tbox
+  There are some examples in the test directory.
+
+More information in: http://hsbrowser.wordpress.com/tree-box-css-project/
+
