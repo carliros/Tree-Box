@@ -89,7 +89,7 @@ pDiv   = NTree (NTag "div"  ) <$> pTagged "div"   (pList1 pElem)
 
 pText = (\lstr -> NTree (NText (unwords lstr)) []) <$> pList1 pString
 
-pColor = pAny pKeyword ["red", "yellow", "darkgrey", "grey", "white", "green", "blue", "cyan", "magenta"]
+pColor = pAny pKeyword ["red", "yellow", "darkgrey", "grey", "white", "green", "blue", "cyan", "magenta", "black"]
 
 pStyle = pAny pKeyword ["hidden", "dotted", "dashed", "solid"]
 
